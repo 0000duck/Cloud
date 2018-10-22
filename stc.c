@@ -1,5 +1,3 @@
-//GYZ
- 
 #include <reg52.h>
  
  

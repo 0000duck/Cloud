@@ -1,0 +1,193 @@
+/**
+ * @file helical_rolling_gait.h
+ * @brief 螺旋捻転推進のためのクラス
+ * @author Tatsuya TAKEMORI
+ * @date 2016/08/13
+ * @detail
+ */
+
+#ifndef SNAKE_CONTROL_SRC_HELICAL_CURVE_GAIT_H_
+#define SNAKE_CONTROL_SRC_HELICAL_CURVE_GAIT_H_
+
+#include <ros/ros.h>
+#include <vector>
+
+#include "robot_spec.h"
+#include "simple_shape_connection.h"
+
+#include <stdint.h>
+#include "std_msgs/Float64.h"
+#include "std_msgs/String.h"
+
+/** @fn
+ * @brief 横うねりのクラス
+ * @detail
+ *  必ずしもその必要はないが，SimpleShapeConnectionの枠組みで作る
+ *  一つの螺旋がずっとループする
+ */
+
+class HelicalCurveGait : public SimpleShapeConnection {
+ public:
+
+  virtual ~HelicalCurveGait(){}
+
+ HelicalCurveGait(RobotSpec spec,
+		  uint32_t num_ds_link_body,
+		  double min_alpha,
+		  double max_alpha,
+		  double min_l,
+		  double max_l,
+		  double ds
+		  ) : SimpleShapeConnection(spec, num_ds_link_body) {
+
+    min_alpha_ = min_alpha;
+    max_alpha_ = max_alpha;
+    min_l_ = min_l;
+    max_l_ = max_l;
+    ds_new = ds;
+    pre_s = 0;
+    s = 0;
+    gait_name_ = "Helical_Curve";
+    InitializeShape();
+		
+    R = 0.0655;
+    dss = 0.0905;
+    ds = 0.0905;
+    R0 = 0.3;
+    al = (2*M_PI)/8;	
+    r = 0.035;
+    dt = 0.010;                              // サンプリングタイム10[msec]
+    dth = M_PI/30;
+    beta = 0;
+    t = 0;
+    to = 0;	//theta_offset
+    ppsi = 0;
+    vs = 0;
+    tau = 0;
+    kappa = 0;
+    aaa=1;
+    mode=0;
+  }
+
+  double R;	//半径
+  double ds;                // ユニット間距離(MX106)
+  double dss;
+  double R0;	//絶対座標系の原点から相対座標系の原点までの距離		
+  double al;				//ピッチ設定
+  double r;		//dynamixelの半径(MX_106)
+  double dt;                              // サンプリングタイム10[msec]
+  double dth;
+  double beta;
+  double t;
+  double to;	//theta_offset
+  double psi_old;
+  double ppsi;
+  double vs;
+  double tau;
+  double kappa;
+  double aaa;
+  double mode;
+
+
+  //--- 動作
+  void init();
+  void Winding(RobotSpec spec);
+  void WindingShift();
+
+  virtual void InitializeShape() {
+
+  }
+
+  //--- 形状パラメータ変更
+  void set_alpha(double alpha);
+  void add_alpha(double alpha_add){ set_alpha(alpha_+alpha_add); }
+  void set_l(double l);
+  void add_l(double l_add){ set_l(l_+l_add); }
+
+
+  //void Roll(double ratio_to_max, double time_move);
+  //void SShiftByRatio(double ratio_to_max, double time_move);
+
+  //protected:
+  // 制限値計算
+  //double CalcMaxShiftVelocity();
+  //double CalcMaxRollingVelocity();
+  //void ReshapeSegmentParameter();
+  // セグメントパラメータ計算用
+  //static double CalcCurvatureHelix(double diameter, double pitch);
+  //static double CalcTorsionHelix(double diameter, double pitch)
+  //protected:
+  // 形状パラメータ
+
+  double l_;      //
+  double alpha_;     //
+  double alpha_s;   //
+
+  double bias_;      // バイアス
+  double dt_;		   // サンプリングタイム
+  double kp_bias_;   // 操舵バイアス比例ゲイン
+  double step_;
+
+  //private:
+
+  // 形状パラメータ制限用
+  double min_alpha_;
+  double max_alpha_;
+  double min_l_;
+  double max_l_;
+  double bias_max_;		// 最大バイアス 単位は[rad]
+  double v_max_;			// 最大速度[m/s]
+
+  double s;
+  double v;
+  double ds_new;
+
+  double pre_s;
+  float  step_s;
+
+  /***   サーペノイド曲線用パラメータ    ***/
+  typedef struct {
+    double alpha_s;       // 生物機械工学の(3.10)式
+    double alpha;         // くねり角[rad]
+    double l;             // 曲線の1/4周期の長さ[m]
+
+  }SERPENOID_CURVE;
+
+  /***   ヘビの各関節の実行するパラメータ    ***/
+  typedef struct{      // τ(s)=0，κ_p(s)およびκ_y(s)は任意の背びれ曲線のパラメータ．横うねり推進を考慮して"bias"もパラメータとしてメンバにした．
+    std::vector<double> angle;
+    std::vector<double> bias;
+    std::vector<double> kappa;
+    std::vector<double> tau;
+    std::vector<double> psi;
+    std::vector<double> phi;
+
+  }SNAKE_MODEL_PARAM;
+
+
+  /***   ヘビの各関節のデックのなかのデータ,  シフトするパラメータ    ***/
+  typedef struct{
+
+    std::vector<double> kappa_hold;
+    std::vector<double> tau_hold;
+    std::vector<double> bias_hold;
+    std::vector<double> psi_hold;
+    std::vector<double> phi_hold;
+    std::vector<double> flag_hold;
+
+  }SHIFT_PARAM;
+
+  typedef struct{
+    std::vector<SHIFT_PARAM> shift_param;
+
+  }HOLD_DATA;
+
+  HOLD_DATA hold_data;
+
+  SERPENOID_CURVE     serpenoid_curve;
+  SNAKE_MODEL_PARAM   snake_model_param;
+  //std::vector<SHIFT_PARAM> shift_param;
+	
+};
+
+#endif /* SNAKE_CONTROL_SRC_HELICAL_CURVE_GAIT_H_ */

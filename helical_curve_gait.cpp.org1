@@ -1,0 +1,649 @@
+/**
+ * @file helical_curve_gait.cpp
+ * @brief 
+ * @author TI
+ * @date 2016/09/7
+ * @detail
+ */
+
+#include <ros/ros.h>
+#include <cmath>
+#include "helical_curve_gait.h"
+
+
+/** @fn
+ * @brief 
+ * @param double alpha
+ * @detail
+ *  
+ */
+void HelicalCurveGait::set_alpha(double alpha) {
+
+  //if (CalcCurvatureHelix(diameter, pitch_) > spec_.max_curvature_body()) {
+  // 不適のとき，なるべく小さいdiameterに設定
+  //  double k = spec_.max_curvature_body();
+  //  double b = pitch_/(2*M_PI);
+  //  diameter = (1+std::sqrt(1-4*k*k*b*b))/k;
+  // }
+  // 代入
+  //if(diameter < min_diameter_) diameter_ = min_diameter_;
+  //else if(diameter > max_diameter_) diameter_ = max_diameter_;
+  // else diameter_ = diameter;
+  // ReshapeSegmentParameter();
+  //ROS_INFO("[%s] diameter change to %4.3f [m]", gait_name_.c_str(), diameter_);
+}
+
+/** @fn
+ * @brief 螺旋のピッチを変更する
+ * @param double pitch [m] 螺旋のピッチ
+ * @detail
+ *  螺旋半径と制限値から求まる最小のピッチを考慮して設定される
+ */
+void HelicalCurveGait::set_l(double l) {
+  // 現在のdiameterから，関節可動域を満たすpitchか確認
+  //if (CalcCurvatureHelix(diameter_, pitch) > spec_.max_curvature_body()) {
+  // 不適のとき，なるべく小さいpitchに設定
+  //  double k = spec_.max_curvature_body();
+  //  double a = diameter_/2;
+  //  pitch = 2.0*M_PI*std::sqrt(a/k-a*a);
+  // }
+  // 代入
+  // if(pitch < min_pitch_) pitch_ = min_pitch_;
+  // else if(pitch > max_pitch_) pitch_ = max_pitch_;
+  // else pitch_ = pitch;
+  // ReshapeSegmentParameter();
+  // ROS_INFO("[%s] pitch change to %4.3f [m]", gait_name_.c_str(), pitch_);
+}
+
+void HelicalCurveGait::init()
+{
+
+
+}
+
+/** @fn
+ * @brief ロボットを捻転させるようにパラメータを変更
+ * @param double ratio_to_max [-1.0, 1.0] 最大捻転速さに対する割合
+ * @paran double time_move [sec] 何秒分動かすか
+ * @return なし
+ * @detail
+ */
+
+
+
+
+void HelicalCurveGait::Winding(RobotSpec spec) {
+
+  dt_       = 0.01;				// サンプリングタイム10[msec]
+  bias_     = 0.0;
+  v_max_    = 0.5;			// 最大速度[m/s]
+  bias_max_ = M_PI/8;			// 最大バイアス 単位は[rad]
+  kp_bias_  = 0.05;			// 操舵バイアス比例ゲイン
+  //pre_s = s = 0;
+  //s = 0;
+  v = 1;
+
+  serpenoid_curve.alpha = M_PI/8;
+  serpenoid_curve.l     = 0.2;
+
+  double step  = 1*v_max_*dt_;			// データ保持刻み（3*Δs_max移動したら角度を保持）
+
+  static int init_flag =1;
+
+  //ROS_INFO("**********  1  OK   *********");
+
+
+
+  /***  角度保持初期化 (一回だけ入る)***/
+  if(init_flag==1){
+    hold_data.shift_param.resize(spec.num_joint());
+    //init();
+    ////////////////////////////////	ROS_INFO(" 1 snake_model_param.size is  %d", hold_data.shift_param.size());
+    ///////////////////////////////	ROS_INFO(" 2 spec.num_joint() : %d ", spec.num_joint());
+
+    //ROS_INFO("**********  2  OK *********");
+    int max_hold_num = (int)(ds_new/step);		// 角度を保持する数 角度を保持する数
+    //ROS_INFO("********  2.2  OK  *********");
+    int hold_num     = (int)hold_data.shift_param[0].kappa_hold.size();   // デックの大きさ
+
+    //ROS_INFO(" 3 hold_num = %d ", hold_num);
+    //ROS_INFO(" 4 max_hold_num = %d ", max_hold_num);
+
+    //ROS_INFO("snake_model_param.angle.size is  %d", hold_data.shift_param[0].kappa_hold.size());
+
+    for(int i=0; i<spec.num_joint(); i++){
+
+      //ROS_INFO("**********  2.3  OK  *********");
+      hold_data.shift_param[i].bias_hold.clear();
+      hold_data.shift_param[i].kappa_hold.clear();
+      hold_data.shift_param[i].tau_hold.clear();
+      hold_data.shift_param[i].psi_hold.clear();
+
+      //ROS_INFO("**********  2.4  OK  *********");
+      //ROS_INFO("hold_data.shift_param[ %d ].kappa_hold is  %d", i, hold_data.shift_param[i].kappa_hold.size());
+    }
+
+    while(hold_num < max_hold_num){           // 初期値0をデックに追加しておく
+      for(int i=0; i<spec.num_joint(); i++){
+	//ROS_INFO("**********  3 OK  *********");
+
+	hold_data.shift_param[i].bias_hold.push_back(0);
+	hold_data.shift_param[i].kappa_hold.push_back(0);
+	hold_data.shift_param[i].tau_hold.push_back(0);
+	hold_data.shift_param[i].psi_hold.push_back(0);
+
+      }
+      hold_num = (int)hold_data.shift_param[0].kappa_hold.size();
+
+      //ROS_INFO("hold_data.shift_param[ %d ].kappa_hold is  %d", 0, hold_data.shift_param[0].kappa_hold.size());
+      //ROS_INFO("**********  4 OK *********");
+    }
+    init_flag = 0;
+  }
+  //ROS_INFO(" *hold_data.shift_param[ %d ].kappa_hold is  %d", 0, hold_data.shift_param[0].kappa_hold.size());
+
+
+
+
+
+
+  //ROS_INFO("**********  5 OK  *********");
+  // 操舵指令
+  //ROS_INFO("v is now at position %f", v);
+  s += v*dt_;  // 接線方向の移動距離（移動するときの軌跡の長さ）
+
+  int j=0;
+  // 操舵バイアス（速度にも比例してインクリメント）
+
+  //	double psi ;
+
+  double new_target_kappa_yaw   = 0;
+  double new_target_kappa_pitch = 0;
+  double new_target_tau_yaw   = 0;
+  double new_target_tau_pitch = 0;
+  double new_target_bias        = 0;
+
+
+  //ROS_INFO("**********  6 OK *********");
+  //ROS_INFO(" s = %f ", s);
+  //ROS_INFO(" pre_s = %f ", pre_s);
+
+
+  if(mode==0){
+
+
+    while(s > (pre_s+step)){
+
+      //ROS_INFO("**********  7 OK  *********");
+
+      /***　先頭UNITのyaw,pitch 軸のkappa を計算する  ***/
+      //	      serpenoid_curve.alpha_s = (pre_s * M_PI / (2 * serpenoid_curve.l));
+
+      t = t + dth;
+      to = (vs*r*dt*sin(al))/R + beta;
+
+
+      kappa = sqrt((pow(R,4)*((3*pow(R,6)*pow(tan(al),6))/8 + pow(R0,6)*pow(tan(al),2) + pow(R0,6) + (pow(R,6)*cos(2*(t + to))*pow(tan(al),6))/2 + (pow(R,6)*cos(4*(t + to))*pow(tan(al),6))/8 + (7*pow(R,2)*pow(R0,4)*pow(tan(al),2))/2 + (11*pow(R,2)*pow(R0,4)*pow(tan(al),4))/2 + (13*pow(R,4)*pow(R0,2)*pow(tan(al),4))/8 + pow(R,2)*pow(R0,4)*pow(tan(al),6) + 3*pow(R,4)*pow(R0,2)*pow(tan(al),6) - (pow(R,2)*pow(R0,4)*cos(2*(t + to))*pow(tan(al),2))/2 + (3*pow(R,2)*pow(R0,4)*cos(2*(t + to))*pow(tan(al),4))/2 + (3*pow(R,4)*pow(R0,2)*cos(2*(t + to))*pow(tan(al),4))/2 + 3*pow(R,4)*pow(R0,2)*cos(2*(t + to))*pow(tan(al),6) - (pow(R,4)*pow(R0,2)*cos(4*(t + to))*pow(tan(al),4))/8 + 4*R*pow(R0,5)*pow(tan(al),2)*cos(t + to) + 2*R*pow(R0,5)*pow(tan(al),4)*cos(t + to) + 3*pow(R,5)*R0*pow(tan(al),6)*cos(t + to) + pow(R,5)*R0*cos(3*(t + to))*pow(tan(al),6) + 8*pow(R,3)*pow(R0,3)*pow(tan(al),4)*cos(t + to) + 4*pow(R,3)*pow(R0,3)*pow(tan(al),6)*cos(t + to)))/pow(R0,6))/pow(((pow(R,2)*((pow(R,2)*pow(tan(al),2))/2 + pow(R0,2)*pow(tan(al),2) + pow(R0,2) + (pow(R,2)*cos(2*(t + to))*pow(tan(al),2))/2 + 2*R*R0*pow(tan(al),2)*cos((t + to))))/pow(R0,2)),(3/2)); 
+
+      tau = ((- 2*pow(R,5)*R0*(cos(3*(t + to)) + 3*cos((t + to))) - 2*pow(R,4)*R0*(4*R0 + 4*R0*cos(2*(t + to))) - 8*pow(R,3)*pow(R0,3)*cos((t + to)))*pow(tan(al),5) + (8*R*pow(R0,5)*cos((t + to)) + 2*pow(R,3)*R0*(pow(R0,2)*cos(3*(t + to)) - 13*pow(R0,2)*cos((t + to))) - 16*pow(R,2)*pow(R0,4)*cos(2*(t + to)))*pow(tan(al),3) + (8*pow(R0,6) - 16*R*pow(R0,5)*cos((t + to)))*tan(al))/(R*(3*pow(R,6)*pow(tan(al),6) + 8*pow(R0,6)*pow(tan(al),2) + 8*pow(R0,6) + 4*pow(R,6)*cos(2*(t + to))*pow(tan(al),6) + pow(R,6)*cos(4*(t + to))*pow(tan(al),6) + 28*pow(R,2)*pow(R0,4)*pow(tan(al),2) + 44*pow(R,2)*pow(R0,4)*pow(tan(al),4) + 13*pow(R,4)*pow(R0,2)*pow(tan(al),4) + 8*pow(R,2)*pow(R0,4)*pow(tan(al),6) + 24*pow(R,4)*pow(R0,2)*pow(tan(al),6) - 4*pow(R,2)*pow(R0,4)*cos(2*(t + to))*pow(tan(al),2) + 12*pow(R,2)*pow(R0,4)*cos(2*(t + to))*pow(tan(al),4) + 12*pow(R,4)*pow(R0,2)*cos(2*(t + to))*pow(tan(al),4) + 24*pow(R,4)*pow(R0,2)*cos(2*(t + to))*pow(tan(al),6) - pow(R,4)*pow(R0,2)*cos(4*(t + to))*pow(tan(al),4) + 32*R*pow(R0,5)*pow(tan(al),2)*cos((t + to)) + 16*R*pow(R0,5)*pow(tan(al),4)*cos((t + to)) + 24*pow(R,5)*R0*pow(tan(al),6)*cos((t + to)) + 8*pow(R,5)*R0*cos(3*(t + to))*pow(tan(al),6) + 64*pow(R,3)*pow(R0,3)*pow(tan(al),4)*cos((t + to)) + 32*pow(R,3)*pow(R0,3)*pow(tan(al),6)*cos((t + to))));
+
+
+      //psi = tau*dss;
+      ppsi =  ppsi + vs*0.01;
+	      
+      ROS_INFO(" t = %f", t);
+      ROS_INFO(" to = %f", to);
+      ROS_INFO(" pre_s = %f", pre_s);
+      ROS_INFO(" tau = %f", tau);
+      ROS_INFO(" kappa = %f", kappa);
+      ROS_INFO(" dss = %f", dss);
+      ROS_INFO(" vs = %f", vs);
+      ROS_INFO(" beta = %f", beta);
+      ROS_INFO(" ds = %f", ds);
+
+      ROS_INFO(" mode = %f", mode); 
+
+      // new_target_kappa_yaw    = (M_PI * serpenoid_curve.alpha / (2 * serpenoid_curve.l)) * sin(serpenoid_curve.alpha_s);
+      //   new_target_kappa_pitch  = 0;	 
+
+
+      ROS_INFO(" ppsi = %f", ppsi);
+      //	  ROS_INFO(" psi_old = %f", psi_old);
+      ROS_INFO(" R = %f", R);
+      new_target_kappa_pitch  = -kappa * sin(ppsi);
+      new_target_kappa_yaw    = kappa * cos(ppsi);
+
+      new_target_tau_pitch = tau * 0.0905;
+      new_target_tau_yaw = tau * 0.0905;
+
+      ROS_INFO(" new_target_kappa_pitch = %f", new_target_kappa_pitch);
+      ROS_INFO(" new_target_kappa_yaw = %f", new_target_kappa_yaw);
+      ROS_INFO(" new_target_tau_pitch = %f", new_target_tau_pitch);	      
+      ROS_INFO(" new_target_tau_yaw = %f", new_target_tau_yaw);
+
+      // // new_target_tau_pitch = 0;
+      // // new_target_tau_yaw = 0;
+
+      new_target_bias         = bias_;
+
+      //ROS_INFO(" new_target_kappa_yaw = %f", new_target_kappa_yaw);
+
+
+      /***  先頭デックの最初の要素に現在κを追加 (デックの長さ前より＋１になる) ***/
+      hold_data.shift_param[0].kappa_hold.insert(hold_data.shift_param[0].kappa_hold.begin(), new_target_kappa_pitch);
+      hold_data.shift_param[1].kappa_hold.insert(hold_data.shift_param[1].kappa_hold.begin(), new_target_kappa_yaw);
+      hold_data.shift_param[0].tau_hold.insert(hold_data.shift_param[0].tau_hold.begin(), new_target_tau_pitch);
+      hold_data.shift_param[1].tau_hold.insert(hold_data.shift_param[1].tau_hold.begin(), new_target_tau_yaw);
+      hold_data.shift_param[0].psi_hold.insert(hold_data.shift_param[0].psi_hold.begin(), 0);
+      hold_data.shift_param[1].psi_hold.insert(hold_data.shift_param[1].psi_hold.begin(), 0);
+      hold_data.shift_param[0].bias_hold.insert(hold_data.shift_param[0].bias_hold.begin(), 0);
+      hold_data.shift_param[1].bias_hold.insert(hold_data.shift_param[1].bias_hold.begin(), new_target_bias);
+
+      //ROS_INFO("**********  8 OK  *********");
+      int hold_num = (int)hold_data.shift_param[0].kappa_hold.size();   // デックの大きさ, 前より＋１になった
+      //ROS_INFO(" **hold_data.shift_param[ %d ].kappa_hold is  %d", 0, hold_data.shift_param[0].kappa_hold.size());
+      //ROS_INFO(" **hold_data.shift_param[ %d ].kappa_hold is  %d", 1, hold_data.shift_param[1].kappa_hold.size());
+      //ROS_INFO(" hold_data.shift_param[ %d ].kappa_hold is  %f", 0, hold_data.shift_param[0].kappa_hold[0]);
+      //ROS_INFO(" hold_data.shift_param[ %d ].kappa_hold is  %f", 1, hold_data.shift_param[1].kappa_hold[0]);
+
+      //ROS_INFO("**********  9 OK  *********");
+      /***  後続ユニットの目標値をシフトしていれる  (１つ前のデックの最後のものを先頭に入れる)***/
+      for(int i=2; i<spec.num_joint(); i++){
+	//ROS_INFO("**********  9.1  *********");
+	hold_data.shift_param[i].kappa_hold.insert(hold_data.shift_param[i].kappa_hold.begin(), hold_data.shift_param[i-2].kappa_hold[hold_num-1]);
+	//	            hold_data.shift_param[i].tau_hold.insert(hold_data.shift_param[i].tau_hold.begin(), hold_data.shift_param[i-1].tau_hold[hold_num-1]);
+	hold_data.shift_param[i].bias_hold.insert(hold_data.shift_param[i].bias_hold.begin(), hold_data.shift_param[i].bias_hold[hold_num-1]);
+	hold_data.shift_param[i].psi_hold.insert(hold_data.shift_param[i].psi_hold.begin(), hold_data.shift_param[i].psi_hold[hold_num-1]);
+	//ROS_INFO(" ***hold_data.shift_param[ %d ].kappa_hold is  %f", i, hold_data.shift_param[i].kappa_hold[0]);
+      }
+
+      for(int i=1; i<spec.num_joint(); i++){
+	//ROS_INFO("**********  9.1  *********");
+	// hold_data.shift_param[i].kappa_hold.insert(hold_data.shift_param[i].kappa_hold.begin(), hold_data.shift_param[i-1].kappa_hold[hold_num-1]);
+	hold_data.shift_param[i].tau_hold.insert(hold_data.shift_param[i].tau_hold.begin(), hold_data.shift_param[i-1].tau_hold[hold_num-1]);
+	//    hold_data.shift_param[i].bias_hold.insert(hold_data.shift_param[i].bias_hold.begin(), hold_data.shift_param[i].bias_hold[hold_num-1]);
+	//   hold_data.shift_param[i].psi_hold.insert(hold_data.shift_param[i].psi_hold.begin(), hold_data.shift_param[i].psi_hold[hold_num-1]);
+	//ROS_INFO(" ***hold_data.shift_param[ %d ].kappa_hold is  %f", i, hold_data.shift_param[i].kappa_hold[0]);
+      }
+
+      /***  角度保持デックの末尾のκを読み取る, ヘビの関節に送る  ***/
+      for(int i=0; i<spec.num_joint(); i++){
+	//ROS_INFO("**********  9.2  *********");
+	snake_model_param.kappa.insert(snake_model_param.kappa.begin()+i, hold_data.shift_param[i].kappa_hold[hold_num-1]);
+	snake_model_param.tau.insert(snake_model_param.tau.begin()+i, hold_data.shift_param[i].tau_hold[hold_num-1]);
+	snake_model_param.bias.insert(snake_model_param.bias.begin()+i, hold_data.shift_param[i].bias_hold[hold_num-1]);
+	snake_model_param.psi.insert(snake_model_param.psi.begin()+i, hold_data.shift_param[i].psi_hold[hold_num-1]);
+
+	//ROS_INFO(" snake_model_param.kappa[ %d ] is  %f", i, snake_model_param.kappa[i]);
+
+	//snake_model_param.kappa[i] = hold_data.shift_param[i].kappa_hold[hold_num-1];
+	//snake_model_param.tau[i]   = hold_data.shift_param[i].tau_hold[hold_num-1];
+	//snake_model_param.bias[i]  = hold_data.shift_param[i].bias_hold[hold_num-1];
+	//snake_model_param.psi[i]   = hold_data.shift_param[i].psi_hold[hold_num-1];
+	// ROS_INFO("**********  9.3  *********");
+
+	snake_model_param.phi.insert(snake_model_param.phi.begin()+i, 0.0);
+
+	//snake_model_param.phi[i]   = 0;//2*M_PI/2;
+
+	hold_data.shift_param[i].kappa_hold.pop_back();
+	hold_data.shift_param[i].tau_hold.pop_back();
+	hold_data.shift_param[i].bias_hold.pop_back();
+	hold_data.shift_param[i].psi_hold.pop_back();
+
+	//ROS_INFO(" ****snake_model_param.kappa is %f", snake_model_param.kappa[i]);
+	//  ROS_INFO("**********  9.4  *********");
+      }
+      pre_s = pre_s + step;
+      //t = t + dth;
+
+
+      // ROS_INFO("**********  9.5  *********");
+      //////////////////////////////////////////////////ROS_INFO(" snake_model_param.kappa[ %d ] is  %f", j, snake_model_param.kappa[j]);
+      j++;
+
+    }
+
+
+
+
+    double target_angle = 0; // snake_model_param.bias[i] + 2 * spec.link_length_body() * snake_model_param.kappa[i]*sin(snake_model_param.tau[i] + snake_model_param.psi[i]);
+    snake_model_param.angle.resize(spec.num_joint());
+    ROS_INFO("**********  10  *********");
+    for(int i=0; i<spec.num_joint(); i++){
+      //(奇数番目)
+      if(i%2){
+	//target_angle = snake_model_param.bias[i] + 2 * spec.link_length_body() * snake_model_param.kappa[i]*sin(snake_model_param.tau[i] + snake_model_param.psi[i]);
+	target_angle = snake_model_param.kappa[i];
+
+	/////////////////////////////////////////////////ROS_INFO(" target_angle = %f", target_angle);
+	snake_model_param.angle.insert(snake_model_param.angle.begin()+i, target_angle);
+
+	// snake_model_param.angle[i] = (snake_model_param.bias[i]
+	//				+ 2 * spec.link_length_body() * snake_model_param.kappa[i]*sin(snake_model_param.tau[i] + snake_model_param.psi[i]));
+		
+	snake_model_param.angle.pop_back();
+	/////////////////////////////////////////////ROS_INFO("snake_model_param.angle[ %d ] is  %f", i, snake_model_param.angle[i]);
+	//ROS_INFO("snake_model_param.angle.size is  %d", snake_model_param.angle.size());
+
+
+	//(偶数番目)
+      }else{
+	//target_angle = snake_model_param.bias[i] + 2 * spec.link_length_body() * snake_model_param.kappa[i]*cos(snake_model_param.tau[i] + snake_model_param.psi[i]);
+	target_angle = snake_model_param.kappa[i];
+	snake_model_param.angle.insert(snake_model_param.angle.begin()+i, target_angle);
+	/////////////////////////////////////////////ROS_INFO(" target_angle = %f", target_angle);
+	//snake_model_param.angle[i] =(snake_model_param.bias[i]
+	//						+ 2 * spec.link_length_body() * snake_model_param.kappa[i]*cos(snake_model_param.tau[i] + snake_model_param.psi[i]));
+
+	//ROS_INFO("snake_model_param.angle.size is  %f", i, snake_model_param.angle.size());
+	snake_model_param.angle.pop_back();
+	////////////////////////////////////////////ROS_INFO("snake_model_param.angle[ %d ] is  %f", i, snake_model_param.angle[i]);
+	//ROS_INFO("snake_model_param.angle.size is  %d", snake_model_param.angle.size());
+      }
+    }
+  }//mode
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  if(mode==1){
+
+
+    while(s > (pre_s+step)){
+
+      //ROS_INFO("**********  7 OK  *********");
+
+      /***　先頭UNITのyaw,pitch 軸のkappa を計算する  ***/
+      //	      serpenoid_curve.alpha_s = (pre_s * M_PI / (2 * serpenoid_curve.l));
+
+      t = t + dth;
+      to = (vs*r*dt*sin(al))/R + beta;
+
+
+      kappa = sqrt((pow(R,4)*((3*pow(R,6)*pow(tan(al),6))/8 + pow(R0,6)*pow(tan(al),2) + pow(R0,6) + (pow(R,6)*cos(2*(t + to))*pow(tan(al),6))/2 + (pow(R,6)*cos(4*(t + to))*pow(tan(al),6))/8 + (7*pow(R,2)*pow(R0,4)*pow(tan(al),2))/2 + (11*pow(R,2)*pow(R0,4)*pow(tan(al),4))/2 + (13*pow(R,4)*pow(R0,2)*pow(tan(al),4))/8 + pow(R,2)*pow(R0,4)*pow(tan(al),6) + 3*pow(R,4)*pow(R0,2)*pow(tan(al),6) - (pow(R,2)*pow(R0,4)*cos(2*(t + to))*pow(tan(al),2))/2 + (3*pow(R,2)*pow(R0,4)*cos(2*(t + to))*pow(tan(al),4))/2 + (3*pow(R,4)*pow(R0,2)*cos(2*(t + to))*pow(tan(al),4))/2 + 3*pow(R,4)*pow(R0,2)*cos(2*(t + to))*pow(tan(al),6) - (pow(R,4)*pow(R0,2)*cos(4*(t + to))*pow(tan(al),4))/8 + 4*R*pow(R0,5)*pow(tan(al),2)*cos(t + to) + 2*R*pow(R0,5)*pow(tan(al),4)*cos(t + to) + 3*pow(R,5)*R0*pow(tan(al),6)*cos(t + to) + pow(R,5)*R0*cos(3*(t + to))*pow(tan(al),6) + 8*pow(R,3)*pow(R0,3)*pow(tan(al),4)*cos(t + to) + 4*pow(R,3)*pow(R0,3)*pow(tan(al),6)*cos(t + to)))/pow(R0,6))/pow(((pow(R,2)*((pow(R,2)*pow(tan(al),2))/2 + pow(R0,2)*pow(tan(al),2) + pow(R0,2) + (pow(R,2)*cos(2*(t + to))*pow(tan(al),2))/2 + 2*R*R0*pow(tan(al),2)*cos((t + to))))/pow(R0,2)),(3/2)); 
+
+      tau = ((- 2*pow(R,5)*R0*(cos(3*(t + to)) + 3*cos((t + to))) - 2*pow(R,4)*R0*(4*R0 + 4*R0*cos(2*(t + to))) - 8*pow(R,3)*pow(R0,3)*cos((t + to)))*pow(tan(al),5) + (8*R*pow(R0,5)*cos((t + to)) + 2*pow(R,3)*R0*(pow(R0,2)*cos(3*(t + to)) - 13*pow(R0,2)*cos((t + to))) - 16*pow(R,2)*pow(R0,4)*cos(2*(t + to)))*pow(tan(al),3) + (8*pow(R0,6) - 16*R*pow(R0,5)*cos((t + to)))*tan(al))/(R*(3*pow(R,6)*pow(tan(al),6) + 8*pow(R0,6)*pow(tan(al),2) + 8*pow(R0,6) + 4*pow(R,6)*cos(2*(t + to))*pow(tan(al),6) + pow(R,6)*cos(4*(t + to))*pow(tan(al),6) + 28*pow(R,2)*pow(R0,4)*pow(tan(al),2) + 44*pow(R,2)*pow(R0,4)*pow(tan(al),4) + 13*pow(R,4)*pow(R0,2)*pow(tan(al),4) + 8*pow(R,2)*pow(R0,4)*pow(tan(al),6) + 24*pow(R,4)*pow(R0,2)*pow(tan(al),6) - 4*pow(R,2)*pow(R0,4)*cos(2*(t + to))*pow(tan(al),2) + 12*pow(R,2)*pow(R0,4)*cos(2*(t + to))*pow(tan(al),4) + 12*pow(R,4)*pow(R0,2)*cos(2*(t + to))*pow(tan(al),4) + 24*pow(R,4)*pow(R0,2)*cos(2*(t + to))*pow(tan(al),6) - pow(R,4)*pow(R0,2)*cos(4*(t + to))*pow(tan(al),4) + 32*R*pow(R0,5)*pow(tan(al),2)*cos((t + to)) + 16*R*pow(R0,5)*pow(tan(al),4)*cos((t + to)) + 24*pow(R,5)*R0*pow(tan(al),6)*cos((t + to)) + 8*pow(R,5)*R0*cos(3*(t + to))*pow(tan(al),6) + 64*pow(R,3)*pow(R0,3)*pow(tan(al),4)*cos((t + to)) + 32*pow(R,3)*pow(R0,3)*pow(tan(al),6)*cos((t + to))));
+
+
+      //psi = tau*dss;
+      ppsi =  ppsi + vs*0.01;
+	      
+      ROS_INFO(" t = %f", t);
+      ROS_INFO(" to = %f", to);
+      ROS_INFO(" pre_s = %f", pre_s);
+      ROS_INFO(" tau = %f", tau);
+      ROS_INFO(" kappa = %f", kappa);
+      ROS_INFO(" dss = %f", dss);
+      ROS_INFO(" vs = %f", vs);
+      ROS_INFO(" beta = %f", beta);
+      ROS_INFO(" ds = %f", ds);
+
+      ROS_INFO(" mode = %f", mode); 
+
+      // new_target_kappa_yaw    = (M_PI * serpenoid_curve.alpha / (2 * serpenoid_curve.l)) * sin(serpenoid_curve.alpha_s);
+      //   new_target_kappa_pitch  = 0;	 
+
+
+      ROS_INFO(" ppsi = %f", ppsi);
+      //	  ROS_INFO(" psi_old = %f", psi_old);
+      ROS_INFO(" R = %f", R);
+      new_target_kappa_pitch  = -kappa * sin(ppsi);
+      new_target_kappa_yaw    = kappa * cos(ppsi);
+
+      new_target_tau_pitch = tau * 0.0905;
+      new_target_tau_yaw = tau * 0.0905;
+
+      ROS_INFO(" new_target_kappa_pitch = %f", new_target_kappa_pitch);
+      ROS_INFO(" new_target_kappa_yaw = %f", new_target_kappa_yaw);
+      ROS_INFO(" new_target_tau_pitch = %f", new_target_tau_pitch);	      
+      ROS_INFO(" new_target_tau_yaw = %f", new_target_tau_yaw);
+
+      // // new_target_tau_pitch = 0;
+      // // new_target_tau_yaw = 0;
+
+      new_target_bias         = bias_;
+
+      //ROS_INFO(" new_target_kappa_yaw = %f", new_target_kappa_yaw);
+
+
+      /***  先頭デックの最初の要素に現在κを追加 (デックの長さ前より＋１になる) ***/
+      hold_data.shift_param[0].kappa_hold.insert(hold_data.shift_param[0].kappa_hold.begin(), new_target_kappa_pitch);
+      hold_data.shift_param[1].kappa_hold.insert(hold_data.shift_param[1].kappa_hold.begin(), new_target_kappa_yaw);
+      hold_data.shift_param[0].tau_hold.insert(hold_data.shift_param[0].tau_hold.begin(), new_target_tau_pitch);
+      hold_data.shift_param[1].tau_hold.insert(hold_data.shift_param[1].tau_hold.begin(), new_target_tau_yaw);
+      hold_data.shift_param[0].psi_hold.insert(hold_data.shift_param[0].psi_hold.begin(), 0);
+      hold_data.shift_param[1].psi_hold.insert(hold_data.shift_param[1].psi_hold.begin(), 0);
+      hold_data.shift_param[0].bias_hold.insert(hold_data.shift_param[0].bias_hold.begin(), 0);
+      hold_data.shift_param[1].bias_hold.insert(hold_data.shift_param[1].bias_hold.begin(), new_target_bias);
+
+      //ROS_INFO("**********  8 OK  *********");
+      int hold_num = (int)hold_data.shift_param[0].kappa_hold.size();    //デックの大きさ, 前より＋１になった
+
+
+      //ROS_INFO("**********  9 OK  *********");
+      /***  後続ユニットの目標値をシフトしていれる  (１つ前のデックの最後のものを先頭に入れる)***/
+      for(int i=2; i<spec.num_joint(); i++){
+	//ROS_INFO("**********  9.1  *********");
+	hold_data.shift_param[i].kappa_hold.insert(hold_data.shift_param[i].kappa_hold.begin(), hold_data.shift_param[i-2].kappa_hold[hold_num-1]);
+	//hold_data.shift_param[i].tau_hold.insert(hold_data.shift_param[i].tau_hold.begin(), hold_data.shift_param[i-1].tau_hold[hold_num-1]);
+	hold_data.shift_param[i].bias_hold.insert(hold_data.shift_param[i].bias_hold.begin(), hold_data.shift_param[i].bias_hold[hold_num-1]);
+	hold_data.shift_param[i].psi_hold.insert(hold_data.shift_param[i].psi_hold.begin(), hold_data.shift_param[i].psi_hold[hold_num-1]);
+
+      }
+
+      for(int i=1; i<spec.num_joint(); i++){
+	//ROS_INFO("**********  9.1  *********");
+	// hold_data.shift_param[i].kappa_hold.insert(hold_data.shift_param[i].kappa_hold.begin(), hold_data.shift_param[i-1].kappa_hold[hold_num-1]);
+	hold_data.shift_param[i].tau_hold.insert(hold_data.shift_param[i].tau_hold.begin(), hold_data.shift_param[i-1].tau_hold[hold_num-1]);
+	//    hold_data.shift_param[i].bias_hold.insert(hold_data.shift_param[i].bias_hold.begin(), hold_data.shift_param[i].bias_hold[hold_num-1]);
+	//   hold_data.shift_param[i].psi_hold.insert(hold_data.shift_param[i].psi_hold.begin(), hold_data.shift_param[i].psi_hold[hold_num-1]);
+	//ROS_INFO(" ***hold_data.shift_param[ %d ].kappa_hold is  %f", i, hold_data.shift_param[i].kappa_hold[0]);
+      }
+
+
+      /***  角度保持デックの末尾のκを読み取る, ヘビの関節に送る  ***/
+      for(int i=0; i<spec.num_joint(); i++){
+	//ROS_INFO("**********  9.2  *********");
+	snake_model_param.kappa.insert(snake_model_param.kappa.begin()+i, hold_data.shift_param[i].kappa_hold[hold_num-1]);
+	snake_model_param.tau.insert(snake_model_param.tau.begin()+i, hold_data.shift_param[i].tau_hold[hold_num-1]);
+	snake_model_param.bias.insert(snake_model_param.bias.begin()+i, hold_data.shift_param[i].bias_hold[hold_num-1]);
+	snake_model_param.psi.insert(snake_model_param.psi.begin()+i, hold_data.shift_param[i].psi_hold[hold_num-1]);
+
+	//ROS_INFO(" snake_model_param.kappa[ %d ] is  %f", i, snake_model_param.kappa[i]);
+
+	//snake_model_param.kappa[i] = hold_data.shift_param[i].kappa_hold[hold_num-1];
+	//snake_model_param.tau[i]   = hold_data.shift_param[i].tau_hold[hold_num-1];
+	//snake_model_param.bias[i]  = hold_data.shift_param[i].bias_hold[hold_num-1];
+	//snake_model_param.psi[i]   = hold_data.shift_param[i].psi_hold[hold_num-1];
+	// ROS_INFO("**********  9.3  *********");
+
+	snake_model_param.phi.insert(snake_model_param.phi.begin()+i, 0.0);
+
+	//snake_model_param.phi[i]   = 0;//2*M_PI/2;
+
+	hold_data.shift_param[i].kappa_hold.pop_back();
+	hold_data.shift_param[i].tau_hold.pop_back();
+	hold_data.shift_param[i].bias_hold.pop_back();
+	hold_data.shift_param[i].psi_hold.pop_back();
+
+	//ROS_INFO(" ****snake_model_param.kappa is %f", snake_model_param.kappa[i]);
+	//  ROS_INFO("**********  9.4  *********");
+      }
+      pre_s = pre_s + step;
+      //t = t + dth;
+
+
+      // ROS_INFO("**********  9.5  *********");
+      //////////////////////////////////////////////////ROS_INFO(" snake_model_param.kappa[ %d ] is  %f", j, snake_model_param.kappa[j]);
+      j++;
+
+    }
+
+
+
+
+    double target_angle = 0; 
+    snake_model_param.angle.resize(spec.num_joint());
+    ROS_INFO("**********  10  *********");
+    for(int i=0; i<spec.num_joint(); i++){
+      //(奇数番目)
+      if(i%2){
+	target_angle = -kappa * sin(i*dss+ppsi);
+	//	    target_angle = snake_model_param.kappa[i];
+	snake_model_param.angle.insert(snake_model_param.angle.begin()+i, target_angle);
+	snake_model_param.angle.pop_back();
+
+
+	//(偶数番目)
+      }else{
+
+	target_angle = kappa * cos(i*dss+ppsi);
+	//	    target_angle =snake_model_param.kappa[i];
+	snake_model_param.angle.insert(snake_model_param.angle.begin()+i, target_angle);
+	snake_model_param.angle.pop_back();
+      }
+    }
+  }//mode
+
+	
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+	
+
+}
+
+
+
+
+/** @fn
+ * @brief SShiftを行う．動作としては捻転するだけ
+ * @param double ratio_to_max [-1.0, 1.0] 最大速さに対する割合
+ * @paran double time_move [sec] 何秒分動かすか
+ * @return なし
+ * @detail
+ */
+void HelicalCurveGait::WindingShift() {
+  //SShift(ratio_to_max*CalcMaxShiftVelocity()*time_move);
+}
+
+
+/** @fn
+ * @brief 最大のシフト速度を求める
+ * @param なし
+ * @return なし
+ * @detail
+ *  ものすごく適当に決める．
+ *  動作としては捻転するだけ．
+ *  歩容切替時に使うかもしれないので定義
+ */
+//double HelicalRollingGait::CalcMaxShiftVelocity() {
+//  return 0.20;
+//}
+
+/** @fn
+ * @brief 最大の捻転速度を求める
+ * @param なし
+ * @return なし
+ * @detail
+ */
+//double HelicalRollingGait::CalcMaxRollingVelocity() {
+//  return spec_.max_joint_angle_velocity() /
+//      (2*spec_.link_length_body()*CalcCurvatureHelix(diameter_, pitch_));
+//}
+
+/** @fn
+ * @brief 形状パラメータを元にセグメントパラメータを更新する
+ * @param なし
+ * @return なし
+ * @detail
+ *  ただの螺旋
+ */
+//void HelicalRollingGait::ReshapeSegmentParameter() {
+//  segment_.resize(1);
+//  segment_[0].ReshapeAsHelix(diameter_/2.0, pitch_, 2.0*M_PI, 0.0);
+//  segment_parameter_was_changed_ = true;
+//}
+
+/** @fn
+ * @brief 螺旋の曲率を計算する
+ * @param double diameter [m] 螺旋の直径
+ * @param double pitch [m] 螺旋のピッチ
+ * @return double [1/m] 螺旋の曲率
+ * @detail
+ */
+//double HelicalRollingGait::CalcCurvatureHelix(double diameter, double pitch) {
+//  double a = diameter/2.0;
+//  double b = pitch/(2*M_PI);
+//  return a/(a*a + b*b);
+//}
+
+/** @fn
+ * @brief 螺旋の捻率を計算する
+ * @param double diameter [m] 螺旋の直径
+ * @param double pitch [m] 螺旋のピッチ
+ * @return double 螺旋の捻率
+ * @detail
+ */
+//double HelicalRollingGait::CalcTorsionHelix(double diameter, double pitch) {
+//  double a = diameter/2.0;
+//  double b = pitch/(2*M_PI);
+//  return b/(a*a + b*b);
+//}
+

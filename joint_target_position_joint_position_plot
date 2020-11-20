@@ -1,0 +1,35 @@
+#!/bin/bash
+# ヒアドキュメント(<<- EOFから始まってEOFで終わるコード)を使ってgnuplot用のスクリプトを直接gnuplotに実行してもらう
+gnuplot <<- EOF
+#Y軸のグリッド線を入れる
+set grid 
+
+#凡例の位置(center, left, right, outside, top, bottom等)
+set key right top
+
+#xy軸のラベル設定
+set xlabel "time [s]" 
+set xrange [ 0 : 100 ]
+
+set ylabel "angle [deg]" 
+set yrange [ -80 : 80 ]
+
+#図のタイトル、論文やスライドのグラフには原則不要、進捗報告用とかに
+#set title "joint position $((i+1))"
+
+#png画像を作る場合
+set terminal png 
+#出力先のファイル指定(相対パス)
+set output "graph.png"
+
+# プロットデータからグラフ生成
+# 基本:plot "元データファイルの名前" with 描画スタイル オプション
+# using x:y x列目のデータを横軸、y列目のデータを縦軸にとる
+# withの後に続く描画スタイルの指定(必須)でグラフの種類が決まる
+# with lp(linespoints)
+# title:凡例名
+plot  "$1" using 1:2 with l title "joint target position" ,\
+      "$2" using 1:2 with l title "joint position"
+
+EOF
+

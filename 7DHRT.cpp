@@ -1,46 +1,47 @@
 
-  #include "math.h"
-  int dhrt(a,b,h,eps,x,m,f)
-  int m;
-  double a,b,h,eps,x[],(*f)();
-  { int n,js;
-    double z,y,z1,y1,z0,y0;
-    n=0; z=a; y=(*f)(z);
-    while ((z<=b+h/2.0)&&(n!=m))
-      { if (fabs(y)<eps)
-          { n=n+1; x[n-1]=z;
-            z=z+h/2.0; y=(*f)(z);
-          }
-        else
-          { z1=z+h; y1=(*f)(z1);
-            if (fabs(y1)<eps)
-              { n=n+1; x[n-1]=z1;
-                z=z1+h/2.0; y=(*f)(z);
-              }
-            else if (y*y1>0.0)
-              { y=y1; z=z1;}
-            else
-              { js=0;
-                while (js==0)
-                  { if (fabs(z1-z)<eps)
-                      { n=n+1; x[n-1]=(z1+z)/2.0;
-                        z=z1+h/2.0; y=(*f)(z);
-                        js=1;
-                      }
-                    else
-                      { z0=(z1+z)/2.0; y0=(*f)(z0);
-                        if (fabs(y0)<eps)
-                          { x[n]=z0; n=n+1; js=1;
-                            z=z0+h/2.0; y=(*f)(z);
-                          }
-                        else if ((y*y0)<0.0)
-                          { z1=z0; y1=y0;}
-                        else { z=z0; y=y0;}
-                      }
-                  }
-              }
-          }
-      }
-    return(n);
+#include <ros/ros.h>
+#include <iostream>
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+#include "sim_snake_class.h"
+
+using namespace std;
+
+float shift = 0;
+
+float Helical_motor_angle[32];
+
+int main(int argc, char **argv)
+{
+  ros::init(argc, argv, "sim_snake_robot_master");
+
+  Sim_snake_IO sim_io;
+
+  for(int i=0; i<JOINT_NUM; i++){
+    sim_io.target_motor_angle[i] = 0.0;
+    sim_io.current_motor_angle[i] = 0.0;
   }
 
+  ros::NodeHandle node;
+  sim_io.Set_publisher(node);
+
+  ros::Subscriber sub_current_position = node.subscribe("current_motor_angle", 100, &Sim_snake_IO::Sub_current_motor_angle, &sim_io);
+  ros::Subscriber sub_time = node.subscribe("simulationTime", 1, &Sim_snake_IO::Sub_time, &sim_io);
+  ros::Subscriber sub_motor_angle = node.subscribe("joint_target_position", 100,  &Sim_snake_IO::Sub_motor_angle, &sim_io);
+  ros::Subscriber sub_force_sensor = node.subscribe("force_data", 1, &Sim_snake_IO::Sub_force_data, &sim_io);
+  ros::Subscriber sub_imu_data = node.subscribe("imu_data_vrep", 1, &Sim_snake_IO::Sub_imu_data, &sim_io);
+  ros::Subscriber sub_imu_rpy = node.subscribe("sim_imu_data", 1, &Sim_snake_IO::Sub_imu_roll_pitch_yaw, &sim_io);
+
+  ros::Rate loop_rate(100);
+
+  while (ros::ok())//ノードが実行中は基本的にros::ok()=1
+  {
+
+    sim_io.Pub_motor_angle();
+    ros::spinOnce();
+    loop_rate.sleep();
+  }
+  return 0;
+}
